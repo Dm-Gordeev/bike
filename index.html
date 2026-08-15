@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ares Bike Console</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0d1117 radial-gradient(1100px 500px at 50% -220px, #1c2836 0%, transparent 70%);
+    color: #e6edf3; margin: 0 auto; padding: 20px 16px 40px; max-width: 840px;
+  }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  header h1 { font-size: 19px; letter-spacing: 4px; margin: 0; font-weight: 700; }
+  header h1 span { color: #ff7043; }
+  header .controls { display: flex; gap: 10px; align-items: center; margin-left: auto; }
+
+  #status { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; color: #8b949e;
+    background: #161b22; border: 1px solid #30363d; padding: 7px 13px; border-radius: 999px; }
+  #status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #f85149; }
+  #status.busy::before { background: #d29922; box-shadow: 0 0 8px #d2992288; }
+  #status.on { color: #7ee787; border-color: #2ea04355; }
+  #status.on::before { background: #3fb950; box-shadow: 0 0 8px #3fb950aa; }
+
+  .card { background: #161b22; border: 1px solid #21262d; border-radius: 14px; padding: 14px 16px; margin: 12px 0; }
+  .cardhead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .cardhead.sub { margin-top: 16px; padding-top: 14px; border-top: 1px solid #21262d; }
+  .cardhead h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.6px; color: #7d8590; margin: 0; font-weight: 600; }
+  .cardhead .state { color: #8b949e; font-size: 13px; letter-spacing: 0; text-transform: none; }
+  .spacer { flex: 1; }
+  .ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  button { font: inherit; background: #21262d; color: #e6edf3; border: 1px solid #30363d;
+    border-radius: 10px; padding: 8px 16px; cursor: pointer; transition: background .15s, border-color .15s, transform .06s; }
+  button:hover { background: #2d333b; border-color: #484f58; }
+  button:active { transform: scale(.96); }
+  button.primary { background: linear-gradient(180deg, #ff8a65, #ff7043); border-color: #ff8a65; color: #211008; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.08); }
+
+  input { font: inherit; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 10px; padding: 8px 12px; }
+  input:focus { outline: none; border-color: #ff7043; }
+  input[type=number] { width: 92px; }
+  select { font: inherit; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 10px; padding: 8px 12px; }
+  select:focus { outline: none; border-color: #ff7043; }
+
+  #gauges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  #gauges canvas { width: 100%; height: 200px; display: block; }
+
+  #metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px; }
+  .metric { background: #0d1117; border: 1px solid #21262d; border-radius: 12px; padding: 8px 10px; text-align: center; }
+  .metric .v { font-size: 26px; font-weight: 600; }
+  .metric .l { color: #7d8590; font-size: 12px; }
+
+  #wkChart { width: 100%; display: block; background: #0d1117; border: 1px solid #21262d; border-radius: 10px; height: 190px; margin-bottom: 8px; }
+  #wkText { width: 100%; background: #0d1117; color: #9da7b3; border: 1px solid #21262d; border-radius: 10px;
+    font: 12px/1.6 Consolas, monospace; padding: 10px 12px; resize: vertical; }
+  #wkText:focus { outline: none; border-color: #ff7043; }
+  #wkHint { font-size: 12px; color: #7d8590; line-height: 1.5; margin: 0 2px 10px; }
+  #wkTimes { font-size: 12px; color: #7d8590; margin: 0 2px 8px; min-height: 15px; }
+
+  #curLevel { color: #ff7043; }
+
+  #log { background: #0d1117; border: 1px solid #21262d; border-radius: 10px; padding: 10px 12px;
+    height: 170px; overflow: auto; font: 12px/1.6 Consolas, monospace; color: #8b949e; white-space: pre-wrap; }
+  #log::-webkit-scrollbar, #wkText::-webkit-scrollbar { width: 8px; }
+  #log::-webkit-scrollbar-thumb, #wkText::-webkit-scrollbar-thumb { background: #30363d; border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="controls">
+    <span id="status">не подключено</span>
+    <button id="btnConnect" class="primary">Подключить</button>
+  </div>
+</header>
+
+<div class="card">
+  <div id="gauges">
+    <canvas id="gCad"></canvas>
+    <canvas id="gPower"></canvas>
+  </div>
+  <div id="metrics">
+    <div class="metric"><div class="v" id="mHr">–</div><div class="l">пульс</div></div>
+    <div class="metric"><div class="v" id="curLevel">–</div><div class="l">уровень</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="cardhead"><h2>Тренировка</h2><span id="wkState" class="state"></span><span class="spacer"></span>
+    <button id="btnWkStart" class="primary">Старт</button><button id="btnWkPause" hidden>Пауза</button><button id="btnWkStop" hidden>Стоп</button></div>
+  <div id="wkSetup">
+    <div class="ctl" style="margin-bottom:10px">
+      <select id="wkPreset" style="flex:1; min-width:150px"></select>
+      <span class="state" style="white-space:nowrap; display:inline-flex; gap:8px; align-items:center">FTP, Вт
+        <input type="number" id="ftpInput" min="50" max="500" step="5"></span>
+    </div>
+    <div id="wkHint"></div>
+  </div>
+  <canvas id="wkChart"></canvas>
+  <div id="wkTimes"></div>
+  <textarea id="wkText" rows="9" spellcheck="false"></textarea>
+</div>
+
+<div class="card">
+  <div class="cardhead"><h2>Лог</h2></div>
+  <div id="log"></div>
+</div>
+
+<script>
+const FTMS_SERVICE = 0x1826;
+const CH = {
+  features:        0x2ACC,
+  indoorBikeData:  0x2AD2,
+  controlPoint:    0x2AD9,
+  status:          0x2ADA,
+  resistanceRange: 0x2AD6,
+  powerRange:      0x2AD8,
+};
+const OP = {
+  requestControl: 0x00,
+  reset: 0x01,
+  setTargetSpeed: 0x02,
+  setTargetInclination: 0x03,
+  setTargetResistance: 0x04,
+  setTargetPower: 0x05,
+  setTargetHeartRate: 0x06,
+  start: 0x07,
+  stopOrPause: 0x08,
+  setIndoorBikeSim: 0x11,
+  response: 0x80,
+};
+const RESULT = { 1:'Success', 2:'OpCode not supported', 3:'Invalid parameter', 4:'Operation failed', 5:'Control not permitted' };
+
+let control = null;
+let resRange = null;
+let curLevel = null;
+
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent += `[${t}] ${msg}\n`;
+  const lines = logEl.textContent.split('\n');
+  if (lines.length > 300) logEl.textContent = lines.slice(-300).join('\n');
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const hex = v => Array.from(new Uint8Array(v.buffer, v.byteOffset, v.byteLength)).map(b => b.toString(16).padStart(2,'0')).join(' ');
+
+async function connectGatt(device, attempts = 3) {
+  for (let i = 1; ; i++) {
+    try {
+      const server = await device.gatt.connect();
+      return await server.getPrimaryService(FTMS_SERVICE);
+    } catch (e) {
+      if (i >= attempts) throw e;
+      log(`Подключение не удалось (попытка ${i}/${attempts}), повтор…`);
+      await sleep(1000);
+    }
+  }
+}
+
+function setStatus(text, cls) {
+  const el = $('status');
+  el.textContent = text;
+  el.className = cls || '';
+}
+
+async function connect() {
+  if (!navigator.bluetooth) { log('Web Bluetooth недоступен — нужен Chrome/Edge на десктопе или Bluefy на iPhone'); return; }
+  try {
+    const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [FTMS_SERVICE] }] });
+    device.addEventListener('gattserverdisconnected', () => { setStatus('отключено'); control = null; erg.active = false; log('Отключено'); });
+    setStatus('подключение…', 'busy');
+    const svc = await connectGatt(device);
+
+    await readFeatures(svc);
+    await readRanges(svc);
+
+    control = await svc.getCharacteristic(CH.controlPoint);
+    await control.startNotifications();
+    control.addEventListener('characteristicvaluechanged', onControlResponse);
+
+    const data = await svc.getCharacteristic(CH.indoorBikeData);
+    await data.startNotifications();
+    data.addEventListener('characteristicvaluechanged', onBikeData);
+
+    try {
+      const st = await svc.getCharacteristic(CH.status);
+      await st.startNotifications();
+      st.addEventListener('characteristicvaluechanged', e => log('Status: ' + hex(e.target.value)));
+    } catch {}
+
+    setStatus('подключено: ' + (device.name || 'байк'), 'on');
+    log('Подключено к ' + (device.name || 'устройству'));
+
+    await ctrl([OP.reset]);          await sleep(300);
+    await ctrl([OP.requestControl]); await sleep(300);
+    await ctrl([OP.start]);
+  } catch (e) {
+    setStatus('ошибка');
+    log('Ошибка: ' + e.message);
+    if (/Connection/i.test(e.message)) log('Байк держит только одно BLE-подключение: закрой Zwift/MyWhoosh и приложения на телефоне, крути педали во время подключения');
+  }
+}
+
+async function readFeatures(svc) {
+  try {
+    const v = await (await svc.getCharacteristic(CH.features)).readValue();
+    const f = v.getUint32(0, true);
+    const caps = [];
+    if (f & (1 << 18)) caps.push('задание сопротивления');
+    if (f & (1 << 19)) caps.push('ERG (ватты)');
+    if (f & (1 << 29)) caps.push('симуляция уклона');
+    if (f & (1 << 20)) caps.push('целевой пульс');
+    if (f & (1 << 16)) caps.push('целевая скорость');
+    log('Фичи байка: ' + (caps.join(', ') || '—') + '  (raw=0x' + f.toString(16).padStart(8,'0') + ')');
+    if (!(f & (1 << 19))) log('ERG не заявлен байком — кнопки ватт, скорее всего, вернут ошибку');
+  } catch { log('Характеристика features (0x2ACC) не найдена'); }
+}
+
+async function readRanges(svc) {
+  try {
+    const v = await (await svc.getCharacteristic(CH.resistanceRange)).readValue();
+    resRange = { min: v.getInt16(0, true) / 10, max: v.getInt16(2, true) / 10 };
+    log(`Диапазон сопротивления: уровни ${resRange.min}…${resRange.max} (по проводу ×10)`);
+  } catch { resRange = { min: 1, max: 32 }; log('Диапазон не прочитан — считаю уровни 1…32'); }
+  try {
+    const v = await (await svc.getCharacteristic(CH.powerRange)).readValue();
+    log(`Диапазон ватт: ${v.getInt16(0,true)}…${v.getInt16(2,true)}, шаг ${v.getUint16(4,true)}`);
+  } catch {}
+}
+
+async function ctrl(bytes) {
+  if (!control) { log('Нет подключения'); return; }
+  try { await control.writeValue(new Uint8Array(bytes)); }
+  catch (e) { log('Запись ' + bytes.map(b => b.toString(16)) + ' не удалась: ' + e.message); }
+}
+
+function onControlResponse(e) {
+  const v = e.target.value;
+  if (v.getUint8(0) !== OP.response) { log('Control notify: ' + hex(v)); return; }
+  const req = v.getUint8(1), code = v.getUint8(2);
+  const name = Object.keys(OP).find(k => OP[k] === req) || ('0x' + req.toString(16));
+  log(`Ответ: ${name} → ${RESULT[code] || code}`);
+}
+
+const S = { speed: 0, cadence: 0, power: 0, hr: 0, dist: 0, time: 0 };
+
+const GAUGES = [
+  { id: 'gCad',   key: 'cadence', label: 'каденс', max: 150, color: '#7ee787', dec: 0, ticks: [0, 30, 60, 90, 120, 150] },
+  { id: 'gPower', key: 'power',   label: 'ватты',  max: 300, color: '#ff7043', dec: 0, ticks: [0, 60, 120, 180, 240, 300] },
+];
+
+const CAD_LO = 75, CAD_HI = 90;
+
+function mixHex(a, b, t) {
+  const pa = [1, 3, 5].map(i => parseInt(a.substr(i, 2), 16));
+  const pb = [1, 3, 5].map(i => parseInt(b.substr(i, 2), 16));
+  return 'rgb(' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(',') + ')';
+}
+
+function drawGauge(g) {
+  const c = g.ctx;
+  if (!c) return;
+  c.clearRect(0, 0, g.w, g.h);
+  const cx = g.w / 2, pad = 22;
+  const arcVerticalSpan = 1 + Math.SQRT1_2;
+  const R = Math.min(g.w / 2 - pad, (g.h - 2 * pad) / arcVerticalSpan);
+  const compact = R < 85;
+  const cy = R + pad;
+  const a0 = Math.PI * 0.75, sweep = Math.PI * 1.5;
+  const frac = Math.max(0, Math.min(1, S[g.key] / g.max));
+  let col = g.color, suffix = '';
+  if (g.key === 'cadence' && S.cadence > 0) {
+    const off = S.cadence < CAD_LO ? S.cadence - CAD_LO : S.cadence > CAD_HI ? S.cadence - CAD_HI : 0;
+    if (off === 0) suffix = ' ~';
+    else {
+      suffix = off < 0 ? ' ↑' : ' ↓';
+      const d = Math.min(1, Math.abs(off) / 25);
+      col = d < 0.5 ? mixHex('#7ee787', '#ff7043', d * 2) : mixHex('#ff7043', '#f85149', d * 2 - 1);
+    }
+  }
+  c.lineCap = 'round';
+  c.beginPath(); c.arc(cx, cy, R, a0, a0 + sweep); c.strokeStyle = '#262b33'; c.lineWidth = 13; c.stroke();
+  if (frac > 0.001) {
+    c.save();
+    c.shadowColor = col; c.shadowBlur = 12;
+    c.beginPath(); c.arc(cx, cy, R, a0, a0 + sweep * frac);
+    c.strokeStyle = col; c.stroke();
+    c.restore();
+    const ea = a0 + sweep * frac;
+    c.beginPath(); c.arc(cx + R * Math.cos(ea), cy + R * Math.sin(ea), 4.5, 0, Math.PI * 2);
+    c.fillStyle = '#f0f6fc'; c.fill();
+  }
+  if (!compact) {
+    c.strokeStyle = '#3d444d'; c.lineWidth = 1.5;
+    c.fillStyle = '#6e7681'; c.font = '10px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    for (const t of g.ticks) {
+      const a = a0 + sweep * (t / g.max);
+      c.beginPath();
+      c.moveTo(cx + (R - 11) * Math.cos(a), cy + (R - 11) * Math.sin(a));
+      c.lineTo(cx + (R - 17) * Math.cos(a), cy + (R - 17) * Math.sin(a));
+      c.stroke();
+      c.fillText(String(t), cx + (R - 29) * Math.cos(a), cy + (R - 29) * Math.sin(a));
+    }
+  }
+  const vFont = compact ? Math.min(32, Math.round(R * 0.5)) : 31;
+  c.fillStyle = suffix ? col : '#f0f6fc'; c.font = '600 ' + vFont + 'px "Segoe UI", system-ui';
+  c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.fillText((g.dec ? S[g.key].toFixed(g.dec) : String(Math.round(S[g.key]))) + suffix, cx, cy - (compact ? Math.round(R * 0.15) : 8));
+  c.fillStyle = '#7d8590'; c.font = (compact ? 11 : 12) + 'px system-ui';
+  c.fillText(g.label, cx, cy + (compact ? Math.round(R * 0.35) : 18));
+}
+
+function niceStep(range, count) {
+  const raw = range / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  return (norm >= 5 ? 10 : norm >= 2 ? 5 : norm >= 1 ? 2 : 1) * mag;
+}
+
+function fmtTime(s) { return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); }
+
+function renderAll() {
+  for (const g of GAUGES) drawGauge(g);
+  $('mHr').textContent = S.hr || '–';
+}
+
+function setupViz() {
+  const dpr = window.devicePixelRatio || 1;
+  for (const g of GAUGES) {
+    const el = $(g.id);
+    el.style.height = Math.round(el.clientWidth * 0.86 + 8) + 'px';
+    g.w = el.clientWidth; g.h = el.clientHeight;
+    el.width = g.w * dpr; el.height = g.h * dpr;
+    g.ctx = el.getContext('2d');
+    g.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  const wel = $('wkChart');
+  woW = wel.clientWidth; woH = wel.clientHeight;
+  wel.width = woW * dpr; wel.height = woH * dpr;
+  woCtx = wel.getContext('2d');
+  woCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  renderAll();
+  drawWorkout();
+}
+
+function onBikeData(e) {
+  const v = e.target.value;
+  const flags = v.getUint16(0, true);
+  let o = 2;
+  if (!(flags & 1)) { S.speed = v.getUint16(o, true) * 0.01; o += 2; }
+  if (flags & 2)    o += 2;
+  if (flags & 4)    { lastCadence = Math.round(v.getUint16(o, true) * 0.5); S.cadence = lastCadence; o += 2; }
+  if (flags & 8)    o += 2;
+  if (flags & 16)   { S.dist = v.getUint8(o) | v.getUint8(o+1) << 8 | v.getUint8(o+2) << 16; o += 3; }
+  if (flags & 32)   o += 2;
+  if (flags & 64)   { lastPower = v.getInt16(o, true); ergPower = ergPower == null ? lastPower : ergPower * 0.7 + lastPower * 0.3; S.power = Math.round(ergPower); o += 2; }
+  if (flags & 128)  o += 2;
+  if (flags & 256)  o += 5;
+  if (flags & 512)  { S.hr = v.getUint8(o); o += 1; }
+  if (flags & 1024) o += 1;
+  if (flags & 2048) { S.time = v.getUint16(o, true); o += 2; }
+  if (flags & 4096) o += 2;
+  renderAll();
+}
+
+function setLevel(level) {
+  level = Math.round(level);
+  if (resRange) level = Math.max(resRange.min, Math.min(resRange.max, level));
+  curLevel = level;
+  $('curLevel').textContent = level;
+  const v = level * 10;
+  ctrl([OP.setTargetResistance, v & 0xFF, (v >> 8) & 0xFF]);
+}
+
+let lastPower = 0, lastCadence = 0, ergPower = null;
+const erg = { active: false, target: 0, lastAdjust: 0, edgeLogged: false };
+
+function ergOn(watts) {
+  if (!control) { log('Нет подключения'); return; }
+  erg.active = true;
+  erg.target = watts;
+  erg.lastAdjust = 0;
+  erg.edgeLogged = false;
+  if (curLevel == null) setLevel(10);
+  log(`Программный ERG: цель ${watts} Вт, старт с уровня ${curLevel}`);
+}
+
+function ergOff() {
+  erg.active = false;
+  log('ERG выключен, уровень остался ' + curLevel);
+}
+
+setInterval(() => {
+  if (!erg.active || !control) return;
+  if (lastCadence === 0 || lastPower === 0) return;
+  const now = Date.now();
+  if (now - erg.lastAdjust < 2500) return;
+  const p = ergPower ?? lastPower;
+  const diff = erg.target - p;
+  const tol = erg.target * 0.1;
+  if (Math.abs(diff) <= tol) return;
+  const step = Math.sign(diff);
+  let next = levelForPower(erg.target, S.cadence) ?? curLevel + step;
+  next = step > 0 ? Math.max(next, curLevel + 1) : Math.min(next, curLevel - 1);
+  next = Math.max(resRange?.min ?? 1, Math.min(resRange?.max ?? 32, next));
+  if (next === curLevel) {
+    if (!erg.edgeLogged) { log('ERG: упёрся в край диапазона — скорректируй каденс'); erg.edgeLogged = true; }
+  } else {
+    erg.edgeLogged = false;
+    log(`ERG: ${Math.round(p)} Вт при цели ${erg.target} → уровень ${next}`);
+    setLevel(next);
+  }
+  erg.lastAdjust = now;
+}, 1000);
+
+const CALIB = [
+  { L: 1, a: 2.07e-4, b: 0.56 }, { L: 5, a: 2.07e-4, b: 1.09 }, { L: 9, a: 2.07e-4, b: 1.58 },
+  { L: 13, a: 2.07e-4, b: 2.05 }, { L: 17, a: 2.07e-4, b: 2.51 }, { L: 21, a: 2.07e-4, b: 3.01 },
+  { L: 25, a: 2.07e-4, b: 3.50 }, { L: 29, a: 3.01e-4, b: 4.04 }, { L: 32, a: 3.01e-4, b: 4.48 },
+];
+
+function levelForPower(watts, cad) {
+  if (cad < 20) return null;
+  const resp = p => p.a * cad * cad + p.b * cad;
+  const pts = CALIB;
+  if (watts <= resp(pts[0])) return pts[0].L;
+  for (let i = 1; i < pts.length; i++) {
+    if (watts <= resp(pts[i])) {
+      const t = (watts - resp(pts[i - 1])) / (resp(pts[i]) - resp(pts[i - 1]));
+      return Math.round(pts[i - 1].L + t * (pts[i].L - pts[i - 1].L));
+    }
+  }
+  return pts[pts.length - 1].L;
+}
+
+let ftp = Number(localStorage.getItem('aresFtp')) || 180;
+const W = pct => Math.max(30, Math.round(ftp * pct / 500) * 5);
+const PRESETS = {
+  ramp:      { name: 'Тест FTP (рампа +6%/мин)', build: () => [[5, 50], ...Array.from({ length: 20 }, (_, k) => [1, 55 + 6 * k])] },
+  cooldown:  { name: 'Заминка 10 мин',           build: () => [[2, 55], [8, 45]] },
+  recovery:  { name: 'Лёгкая 30 мин',            build: () => [[5, 55], [20, 65], [5, 50]] },
+  endurance: { name: 'Выносливость 45 мин (Z2)', build: () => [[5, 55], [35, 72], [5, 55]] },
+  long:      { name: 'Длинная Z2 105 мин',       build: () => [[10, 55], [85, 70], [10, 50]] },
+  sweetspot: { name: 'Свит-спот 3×10 мин',       build: () => [[5, 55], [2, 75], [10, 90], [4, 55], [10, 90], [4, 55], [10, 90], [5, 50]] },
+  threshold: { name: 'Порог 2×12 мин',           build: () => [[5, 55], [3, 75], [12, 98], [6, 55], [12, 98], [5, 50]] },
+  vo2:       { name: 'VO2 30/30 (2×8)',          build: () => { const seg = [[5, 55], [3, 70], [2, 85]]; for (let set = 0; set < 2; set++) { for (let i = 0; i < 8; i++) seg.push([0.5, 120], [0.5, 55]); if (set === 0) seg.push([4, 55]); } seg.push([5, 50]); return seg; } },
+};
+function buildWorkoutText(key) {
+  const p = PRESETS[key];
+  if (!p) return '';
+  return `# ${p.name}, FTP ${ftp} Вт\n` + p.build().map(([m, pct]) => `${m} ${W(pct)}`).join('\n');
+}
+
+const WK_PLAN = 'Неделя: 2× Выносливость + 2× Свит-спот, между тяжёлыми днями отдых или «Лёгкая».';
+const WK_HINTS = {
+  ramp:      'Раз в 4–6 недель вместо тяжёлой, на свежие ноги. Итог вписать в поле FTP.',
+  cooldown:  'После рампы/VO2 или когда ноги налиты. После Z2 и «Лёгкой» не нужна.',
+  recovery:  'На следующий день после тяжёлой — размять ноги без нагрузки.',
+  endurance: 'Основа недели: 2 раза в неделю (субботняя длинная считается за одну).',
+  long:      'Субботняя длинная: ровный лёгкий темп, можно оборвать «Стопом» в любой момент. Заменяет одну выносливость недели.',
+  sweetspot: 'Главная тяжёлая: 2 раза в неделю.',
+  threshold: 'Через месяц-полтора, когда свит-спот станет уверенным; заменяет один свит-спот в неделю.',
+  vo2:       'Когда освоятся пороги; максимум раз в неделю, вместо тяжёлой тренировки.',
+};
+function updateWkHint() {
+  const hint = WK_HINTS[$('wkPreset').value];
+  $('wkHint').innerHTML = WK_PLAN + (hint ? '<br>' + hint : '');
+}
+
+let woCtx = null, woW = 0, woH = 0;
+const wo = { running: false, segments: [], idx: -1, t0: 0, trace: [], preset: '', paused: false, pauseT0: 0 };
+let wakeLock = null;
+
+async function lockScreen(on) {
+  try {
+    if (on) { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); }
+    else if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+  } catch {}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && wo.running) lockScreen(true); });
+let audioCtx = null;
+
+function parseWorkout(text) {
+  const segs = [];
+  for (const line of text.split('\n')) {
+    const clean = line.replace(/#.*$/, '').trim();
+    if (!clean) continue;
+    const m = clean.split(/[\s,;]+/).map(Number);
+    if (m.length >= 2 && m[0] > 0 && m[1] > 0) segs.push({ min: m[0], watts: m[1] });
+  }
+  return segs;
+}
+
+function beep(times = 1) {
+  try {
+    if (!audioCtx) return;
+    for (let i = 0; i < times; i++) {
+      const t0 = audioCtx.currentTime + i * 0.35;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.frequency.value = 880;
+      g.gain.setValueAtTime(0.15, t0);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.25);
+      o.start(t0); o.stop(t0 + 0.3);
+    }
+  } catch {}
+}
+
+function drawWorkout() {
+  const c = woCtx;
+  if (!c) return;
+  c.clearRect(0, 0, woW, woH);
+  const segs = wo.segments.length ? wo.segments : parseWorkout($('wkText').value);
+  c.font = '10px system-ui'; c.textBaseline = 'middle';
+  if (!segs.length) {
+    c.fillStyle = '#484f58'; c.textAlign = 'center';
+    c.fillText('задай сегменты: «минуты ватты» на строку', woW / 2, woH / 2);
+    $('wkTimes').textContent = '';
+    return;
+  }
+  const total = segs.reduce((a, s) => a + s.min * 60, 0);
+  const L = 36, R = 8, T = 10, B = 20, W = woW - L - R, H = woH - T - B;
+  const maxP = Math.max(100, ...segs.map(s => s.watts), ...wo.trace.map(p => p.p)) * 1.15;
+  const x = t => L + W * (t / total);
+  const y = p => T + H * (1 - p / maxP);
+  c.textAlign = 'right';
+  for (let p = 0; p <= maxP; p += 50) {
+    c.strokeStyle = p ? '#21262d' : '#30363d';
+    c.beginPath(); c.moveTo(L, y(p)); c.lineTo(L + W, y(p)); c.stroke();
+    c.fillStyle = '#6e7681'; c.fillText(String(p), L - 6, y(p));
+  }
+  const stepX = niceStep(total / 60, 6) * 60;
+  c.textAlign = 'center';
+  for (let t = 0; t <= total * 1.001; t += stepX) {
+    c.fillStyle = '#6e7681';
+    c.fillText(Math.round(t / 60) + 'м', x(t), T + H + 10);
+  }
+  if (wo.running && wo.idx >= 0) {
+    let acc = 0;
+    for (let i = 0; i < wo.idx; i++) acc += segs[i].min * 60;
+    c.fillStyle = 'rgba(79,195,247,0.08)';
+    c.fillRect(x(acc), T, x(acc + segs[wo.idx].min * 60) - x(acc), H);
+  }
+  c.beginPath();
+  let acc = 0;
+  c.moveTo(x(0), y(segs[0].watts));
+  for (let i = 0; i < segs.length; i++) {
+    acc += segs[i].min * 60;
+    c.lineTo(x(acc), y(segs[i].watts));
+    if (i + 1 < segs.length) c.lineTo(x(acc), y(segs[i + 1].watts));
+  }
+  c.strokeStyle = '#8b949e'; c.lineWidth = 2; c.stroke();
+  if (wo.trace.length > 1) {
+    c.beginPath();
+    wo.trace.forEach((p, i) => { i ? c.lineTo(x(p.t), y(p.c)) : c.moveTo(x(p.t), y(p.c)); });
+    c.strokeStyle = 'rgba(126,231,135,0.6)'; c.lineWidth = 1.5; c.lineJoin = 'round'; c.stroke();
+    c.beginPath();
+    wo.trace.forEach((p, i) => { i ? c.lineTo(x(p.t), y(p.p)) : c.moveTo(x(p.t), y(p.p)); });
+    c.save();
+    c.shadowColor = '#ff7043'; c.shadowBlur = 6;
+    c.strokeStyle = '#ff7043'; c.lineWidth = 2; c.lineJoin = 'round'; c.stroke();
+    c.restore();
+  }
+  if (wo.running) {
+    const el = (Date.now() - wo.t0) / 1000;
+    c.strokeStyle = '#f0f6fc'; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(x(el), T); c.lineTo(x(el), T + H); c.stroke();
+  } else {
+    const lastT = wo.trace.length ? wo.trace[wo.trace.length - 1].t : 0;
+    $('wkTimes').textContent = lastT
+      ? 'прошло ' + fmtTime(Math.floor(lastT)) + ' из ' + fmtTime(total)
+      : 'длительность: ' + Math.round(total / 60) + ' мин';
+  }
+}
+
+function woFinish() {
+  wo.running = false;
+  wo.paused = false;
+  lockScreen(false);
+  if (erg.active) ergOff();
+  if (wo.preset === 'ramp') reportRampFtp();
+  wo.idx = -1;
+  $('wkText').hidden = false;
+  $('wkSetup').hidden = false;
+  $('btnWkStart').hidden = false;
+  $('btnWkPause').hidden = true;
+  $('btnWkStop').hidden = true;
+  $('wkState').textContent = 'финиш ✓';
+  log('Тренировка завершена');
+  beep(3);
+  drawWorkout();
+}
+
+function reportRampFtp() {
+  let acc = 0, best = 0;
+  for (const s of wo.segments) {
+    if (s.min === 1) {
+      const pts = wo.trace.filter(p => p.t >= acc && p.t < acc + 55);
+      if (pts.length >= 50) best = Math.max(best, pts.reduce((a, p) => a + p.p, 0) / pts.length);
+    }
+    acc += s.min * 60;
+  }
+  if (best > 0) log(`Тест: лучшая полная минута ${Math.round(best)} Вт → FTP ≈ ${Math.round(best * 0.75 / 5) * 5} Вт — впиши в поле FTP`);
+}
+
+setInterval(() => {
+  if (!wo.running || wo.paused) return;
+  const el = (Date.now() - wo.t0) / 1000;
+  let acc = 0, cur = null, i = 0;
+  for (; i < wo.segments.length; i++) {
+    const dur = wo.segments[i].min * 60;
+    if (el < acc + dur) { cur = wo.segments[i]; break; }
+    acc += dur;
+  }
+  if (!cur) { woFinish(); return; }
+  if (i !== wo.idx) {
+    wo.idx = i;
+    log(`Сегмент ${i + 1}/${wo.segments.length}: ${cur.watts} Вт, ${cur.min} мин`);
+    beep(i === 0 ? 1 : 2);
+    if (control) {
+      ergOn(cur.watts);
+      const Lv = levelForPower(cur.watts, S.cadence || 80);
+      if (Lv && Lv !== curLevel) setLevel(Lv);
+    }
+  }
+  const left = Math.ceil(acc + cur.min * 60 - el);
+  $('wkState').textContent = `${i + 1}/${wo.segments.length}: цель ${cur.watts} Вт, осталось ${fmtTime(left)}`;
+  const totalAll = wo.segments.reduce((a, s) => a + s.min * 60, 0);
+  $('wkTimes').textContent = fmtTime(Math.floor(el)) + ' / осталось ' + fmtTime(Math.max(0, Math.ceil(totalAll - el)));
+  const last = wo.trace[wo.trace.length - 1];
+  if (!last || el - last.t >= 1) wo.trace.push({ t: el, p: S.power, c: S.cadence });
+  drawWorkout();
+}, 250);
+
+$('btnWkStart').onclick = () => {
+  const segs = parseWorkout($('wkText').value);
+  if (!segs.length) { log('Тренировка пуста — формат: «минуты ватты» на строку'); return; }
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch {} }
+  wo.running = true;
+  wo.preset = $('wkPreset').value;
+  wo.segments = segs;
+  wo.idx = -1;
+  wo.trace = [];
+  wo.t0 = Date.now();
+  wo.paused = false;
+  lockScreen(true);
+  $('wkText').hidden = true;
+  $('wkSetup').hidden = true;
+  $('btnWkStart').hidden = true;
+  $('btnWkPause').hidden = false;
+  $('btnWkPause').textContent = 'Пауза';
+  $('btnWkStop').hidden = false;
+  localStorage.setItem('aresWorkout', $('wkText').value);
+  const totalMin = segs.reduce((a, s) => a + s.min, 0);
+  log(`Тренировка стартовала: ${segs.length} сегментов, ${totalMin} мин`);
+  if (!control) log('Нет подключения — цель покажу, но уровень подставлять не смогу');
+};
+
+$('btnWkStop').onclick = () => {
+  if (!wo.running) return;
+  wo.running = false;
+  wo.paused = false;
+  lockScreen(false);
+  if (erg.active) ergOff();
+  if (wo.preset === 'ramp') reportRampFtp();
+  wo.idx = -1;
+  $('wkText').hidden = false;
+  $('wkSetup').hidden = false;
+  $('btnWkStart').hidden = false;
+  $('btnWkPause').hidden = true;
+  $('btnWkStop').hidden = true;
+  $('wkState').textContent = 'остановлена';
+  log('Тренировка остановлена');
+  drawWorkout();
+};
+
+$('btnWkPause').onclick = () => {
+  if (!wo.running) return;
+  wo.paused = !wo.paused;
+  if (wo.paused) {
+    wo.pauseT0 = Date.now();
+    if (erg.active) ergOff();
+    $('btnWkPause').textContent = 'Дальше';
+    $('wkState').textContent = 'пауза';
+    log('Пауза — ERG выключен, таймер стоит');
+  } else {
+    wo.t0 += Date.now() - wo.pauseT0;
+    wo.idx = -1;
+    $('btnWkPause').textContent = 'Пауза';
+    log('Продолжаем');
+  }
+};
+
+$('wkPreset').innerHTML = '<option value="">— своя —</option>' + Object.entries(PRESETS).map(([k, p]) => `<option value="${k}">${p.name}</option>`).join('');
+const savedWkText = localStorage.getItem('aresWorkout');
+const initPreset = localStorage.getItem('aresPreset') || (savedWkText ? '' : 'endurance');
+$('wkPreset').value = initPreset;
+$('ftpInput').value = ftp;
+$('wkText').value = savedWkText || buildWorkoutText(initPreset);
+updateWkHint();
+
+function applyPreset(key) {
+  $('wkText').value = buildWorkoutText(key);
+  wo.segments = [];
+  wo.trace = [];
+  drawWorkout();
+}
+$('wkPreset').onchange = () => {
+  localStorage.setItem('aresPreset', $('wkPreset').value);
+  if ($('wkPreset').value) applyPreset($('wkPreset').value);
+  updateWkHint();
+};
+$('ftpInput').onchange = () => {
+  ftp = Number($('ftpInput').value) || ftp;
+  $('ftpInput').value = ftp;
+  localStorage.setItem('aresFtp', ftp);
+  if ($('wkPreset').value) applyPreset($('wkPreset').value);
+};
+
+let wkPreviewT = 0;
+$('wkText').addEventListener('input', () => {
+  wo.segments = [];
+  wo.trace = [];
+  $('wkPreset').value = '';
+  localStorage.setItem('aresPreset', '');
+  updateWkHint();
+  clearTimeout(wkPreviewT);
+  wkPreviewT = setTimeout(drawWorkout, 300);
+});
+
+$('btnConnect').onclick = connect;
+
+window.addEventListener('resize', setupViz);
+setupViz();
+</script>
+</body>
+</html>
