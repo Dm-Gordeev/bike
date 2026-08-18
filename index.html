@@ -381,7 +381,13 @@ function setLevel(level) {
 }
 
 let lastPower = 0, lastCadence = 0, ergPower = null;
-const erg = { active: false, target: 0, lastAdjust: 0, edgeLogged: false };
+const erg = {
+  active: false, target: 0, lastAdjust: 0, edgeLogged: false,
+  wpl: 0.12,           // Вт на уровень в пересчёте на 1 rpm — учится по факту смен уровня
+  snap: null,          // снимок (уровень/Вт/каденс/время) до последней смены уровня
+  pendingSign: 0,      // знак ошибки, ждущий подтверждения вторым тактом (анти-дребезг)
+  cadHist: [],         // [t, каденс] за 3 с — пока каденс гуляет, уровень не трогаем
+};
 
 function ergOn(watts) {
   if (!control) { log('Нет подключения'); return; }
@@ -389,7 +395,10 @@ function ergOn(watts) {
   erg.target = watts;
   erg.lastAdjust = 0;
   erg.edgeLogged = false;
+  erg.pendingSign = 0;
+  erg.cadHist.length = 0;
   if (curLevel == null) setLevel(10);
+  erg.snap = { L: curLevel, p: ergPower ?? lastPower, cad: lastCadence, t: Date.now() };
   log(`Программный ERG: цель ${watts} Вт, старт с уровня ${curLevel}`);
 }
 
@@ -402,22 +411,45 @@ setInterval(() => {
   if (!erg.active || !control) return;
   if (lastCadence === 0 || lastPower === 0) return;
   const now = Date.now();
-  if (now - erg.lastAdjust < 2500) return;
   const p = ergPower ?? lastPower;
-  const diff = erg.target - p;
-  const tol = erg.target * 0.1;
-  if (Math.abs(diff) <= tol) return;
-  const step = Math.sign(diff);
-  let next = levelForPower(erg.target, S.cadence) ?? curLevel + step;
-  next = step > 0 ? Math.max(next, curLevel + 1) : Math.min(next, curLevel - 1);
+
+  erg.cadHist.push([now, lastCadence]);
+  while (erg.cadHist.length && now - erg.cadHist[0][0] > 3000) erg.cadHist.shift();
+  let cMin = lastCadence, cMax = lastCadence;
+  for (const [, c] of erg.cadHist) { if (c < cMin) cMin = c; if (c > cMax) cMax = c; }
+  if (cMax - cMin > 5) { erg.pendingSign = 0; return; }
+
+  // ошибка в уровнях; дедбенд 0.75 уровня — ближе полшага при дискретных уровнях не подобраться
+  const e = (erg.target - p) / (erg.wpl * lastCadence);
+  const s = Math.sign(e);
+  if (Math.abs(e) < 0.75) { if (s !== 0 && s !== erg.pendingSign) erg.pendingSign = s; return; }
+
+  // сдвиг только после двух тактов с одним знаком, без переворота знака между ними
+  if (s !== erg.pendingSign) { erg.pendingSign = s; return; }
+  if (now - erg.lastAdjust < 2500) return;
+
+  const step = Math.abs(e) >= 2.5 ? 2 * s : s;
+  let next = curLevel + step;
   next = Math.max(resRange?.min ?? 1, Math.min(resRange?.max ?? 32, next));
   if (next === curLevel) {
     if (!erg.edgeLogged) { log('ERG: упёрся в край диапазона — скорректируй каденс'); erg.edgeLogged = true; }
   } else {
+    // учим шаг по факту прошлой смены уровня — только если каденс за переход не менялся
+    const snap = erg.snap;
+    if (snap && snap.L !== curLevel) {
+      const dt = now - snap.t;
+      const dP = p - snap.p, dL = curLevel - snap.L;
+      if (dt >= 3000 && dt <= 15000 && Math.abs(lastCadence - snap.cad) <= 3 && Math.abs(dL) >= 1 && Math.abs(dP) >= 2) {
+        const m = Math.abs(dP / dL) / ((lastCadence + snap.cad) / 2);
+        erg.wpl = Math.min(0.4, Math.max(0.04, erg.wpl * 0.7 + m * 0.3));
+      }
+    }
     erg.edgeLogged = false;
-    log(`ERG: ${Math.round(p)} Вт при цели ${erg.target} → уровень ${next}`);
+    log(`ERG: ${Math.round(p)} Вт при цели ${erg.target} → уровень ${next} (шаг ≈ ${Math.round(erg.wpl * lastCadence)} Вт)`);
+    erg.snap = { L: curLevel, p, cad: lastCadence, t: now };
     setLevel(next);
   }
+  erg.pendingSign = 0;
   erg.lastAdjust = now;
 }, 1000);
 
