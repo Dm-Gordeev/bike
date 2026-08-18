@@ -477,12 +477,26 @@ function updateWkHint() {
 
 let woCtx = null, woW = 0, woH = 0;
 const wo = { running: false, segments: [], idx: -1, t0: 0, trace: [], preset: '', paused: false, pauseT0: 0 };
-let wakeLock = null;
+let wakeLock = null, wakeReq = 0, wakeUnsupportedLogged = false;
 
 async function lockScreen(on) {
+  const req = ++wakeReq;
   try {
-    if (on) { if ('wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); }
-    else if (wakeLock) { await wakeLock.release(); wakeLock = null; }
+    if (on) {
+      if (!('wakeLock' in navigator)) {
+        if (!wakeUnsupportedLogged) { wakeUnsupportedLogged = true; log('Экран: браузер не поддерживает блокировку от сна — телефон может гаснуть'); }
+        return;
+      }
+      if (wakeLock && !wakeLock.released) return;
+      const sentinel = await navigator.wakeLock.request('screen');
+      if (req !== wakeReq) { try { await sentinel.release(); } catch {} return; }
+      wakeLock = sentinel;
+      sentinel.addEventListener('release', () => { if (wakeLock === sentinel) wakeLock = null; });
+      log('Экран: блокировка от сна включена');
+    } else if (wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
   } catch {}
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && wo.running) lockScreen(true); });
@@ -696,6 +710,7 @@ $('btnWkPause').onclick = () => {
     wo.t0 += Date.now() - wo.pauseT0;
     wo.idx = -1;
     $('btnWkPause').textContent = 'Пауза';
+    lockScreen(true);
     log('Продолжаем');
   }
 };
