@@ -54,7 +54,7 @@
   .metric .v { font-size: 26px; font-weight: 600; }
   .metric .l { color: #7d8590; font-size: 12px; }
 
-  #wkChart { width: 100%; display: block; background: #0d1117; border: 1px solid #21262d; border-radius: 10px; height: 190px; margin-bottom: 8px; }
+  #wkChart { width: 100%; display: block; touch-action: none; background: #0d1117; border: 1px solid #21262d; border-radius: 10px; height: 190px; margin-bottom: 8px; }
   #wkText { width: 100%; background: #0d1117; color: #9da7b3; border: 1px solid #21262d; border-radius: 10px;
     font: 12px/1.6 Consolas, monospace; padding: 10px 12px; resize: vertical; }
   #wkText:focus { outline: none; border-color: #ff7043; }
@@ -508,7 +508,7 @@ function updateWkHint() {
 }
 
 let woCtx = null, woW = 0, woH = 0;
-const wo = { running: false, segments: [], idx: -1, t0: 0, trace: [], preset: '', paused: false, pauseT0: 0 };
+const wo = { running: false, segments: [], idx: -1, t0: 0, trace: [], preset: '', paused: false, pauseT0: 0, seekT: 0 };
 let wakeLock = null, wakeReq = 0, wakeUnsupportedLogged = false;
 
 async function lockScreen(on) {
@@ -574,6 +574,8 @@ function drawWorkout() {
     return;
   }
   const total = segs.reduce((a, s) => a + s.min * 60, 0);
+  const el = wo.running ? (Date.now() - wo.t0) / 1000 : 0;
+  const dispT = wo.running ? el : (wo.seekT > 0 ? Math.min(wo.seekT, total) : Infinity);
   const L = 36, R = 8, T = 10, B = 20, W = woW - L - R, H = woH - T - B;
   const maxP = Math.max(100, ...segs.map(s => s.watts), ...wo.trace.map(p => p.p)) * 1.15;
   const x = t => L + W * (t / total);
@@ -590,11 +592,19 @@ function drawWorkout() {
     c.fillStyle = '#6e7681';
     c.fillText(Math.round(t / 60) + 'м', x(t), T + H + 10);
   }
-  if (wo.running && wo.idx >= 0) {
+  let dispIdx = -1;
+  if (dispT < Infinity) {
     let acc = 0;
-    for (let i = 0; i < wo.idx; i++) acc += segs[i].min * 60;
+    for (let i = 0; i < segs.length; i++) {
+      if (dispT < acc + segs[i].min * 60) { dispIdx = i; break; }
+      acc += segs[i].min * 60;
+    }
+  }
+  if (dispIdx >= 0) {
+    let acc = 0;
+    for (let i = 0; i < dispIdx; i++) acc += segs[i].min * 60;
     c.fillStyle = 'rgba(79,195,247,0.08)';
-    c.fillRect(x(acc), T, x(acc + segs[wo.idx].min * 60) - x(acc), H);
+    c.fillRect(x(acc), T, x(acc + segs[dispIdx].min * 60) - x(acc), H);
   }
   c.beginPath();
   let acc = 0;
@@ -605,27 +615,36 @@ function drawWorkout() {
     if (i + 1 < segs.length) c.lineTo(x(acc), y(segs[i + 1].watts));
   }
   c.strokeStyle = '#8b949e'; c.lineWidth = 2; c.stroke();
-  if (wo.trace.length > 1) {
+  const vis = wo.trace.filter(p => p.t <= dispT);
+  if (vis.length > 1) {
     c.beginPath();
-    wo.trace.forEach((p, i) => { i ? c.lineTo(x(p.t), y(p.c)) : c.moveTo(x(p.t), y(p.c)); });
+    vis.forEach((p, i) => { if (!i || p.t - vis[i - 1].t > 2) c.moveTo(x(p.t), y(p.c)); else c.lineTo(x(p.t), y(p.c)); });
     c.strokeStyle = 'rgba(126,231,135,0.6)'; c.lineWidth = 1.5; c.lineJoin = 'round'; c.stroke();
     c.beginPath();
-    wo.trace.forEach((p, i) => { i ? c.lineTo(x(p.t), y(p.p)) : c.moveTo(x(p.t), y(p.p)); });
+    vis.forEach((p, i) => { if (!i || p.t - vis[i - 1].t > 2) c.moveTo(x(p.t), y(p.p)); else c.lineTo(x(p.t), y(p.p)); });
     c.save();
     c.shadowColor = '#ff7043'; c.shadowBlur = 6;
     c.strokeStyle = '#ff7043'; c.lineWidth = 2; c.lineJoin = 'round'; c.stroke();
     c.restore();
   }
-  if (wo.running) {
-    const el = (Date.now() - wo.t0) / 1000;
+  if (wo.running || wo.seekT > 0) {
     c.strokeStyle = '#f0f6fc'; c.lineWidth = 1;
-    c.beginPath(); c.moveTo(x(el), T); c.lineTo(x(el), T + H); c.stroke();
+    c.beginPath(); c.moveTo(x(dispT), T); c.lineTo(x(dispT), T + H); c.stroke();
+  }
+  if (wo.running) {
+    $('wkTimes').textContent = fmtTime(Math.floor(el)) + ' / осталось ' + fmtTime(Math.max(0, Math.ceil(total - el)));
+  } else if (wo.seekT > 0) {
+    $('wkTimes').textContent = 'старт с ' + fmtTime(Math.floor(wo.seekT)) + ' · осталось ' + fmtTime(Math.ceil(total - wo.seekT));
   } else {
     const lastT = wo.trace.length ? wo.trace[wo.trace.length - 1].t : 0;
     $('wkTimes').textContent = lastT
       ? 'прошло ' + fmtTime(Math.floor(lastT)) + ' из ' + fmtTime(total)
       : 'длительность: ' + Math.round(total / 60) + ' мин';
   }
+}
+
+function wkCursor() {
+  $('wkChart').style.cursor = (wo.running && !wo.paused) ? 'default' : 'crosshair';
 }
 
 function woFinish() {
@@ -635,6 +654,7 @@ function woFinish() {
   if (erg.active) ergOff();
   if (wo.preset === 'ramp') reportRampFtp();
   wo.idx = -1;
+  wo.seekT = 0;
   $('wkText').hidden = false;
   $('wkSetup').hidden = false;
   $('btnWkStart').hidden = false;
@@ -643,6 +663,7 @@ function woFinish() {
   $('wkState').textContent = 'финиш ✓';
   log('Тренировка завершена');
   beep(3);
+  wkCursor();
   drawWorkout();
 }
 
@@ -680,8 +701,6 @@ setInterval(() => {
   }
   const left = Math.ceil(acc + cur.min * 60 - el);
   $('wkState').textContent = `${i + 1}/${wo.segments.length}: цель ${cur.watts} Вт, осталось ${fmtTime(left)}`;
-  const totalAll = wo.segments.reduce((a, s) => a + s.min * 60, 0);
-  $('wkTimes').textContent = fmtTime(Math.floor(el)) + ' / осталось ' + fmtTime(Math.max(0, Math.ceil(totalAll - el)));
   const last = wo.trace[wo.trace.length - 1];
   if (!last || el - last.t >= 1) wo.trace.push({ t: el, p: S.power, c: S.cadence });
   drawWorkout();
@@ -695,8 +714,14 @@ $('btnWkStart').onclick = () => {
   wo.preset = $('wkPreset').value;
   wo.segments = segs;
   wo.idx = -1;
-  wo.trace = [];
-  wo.t0 = Date.now();
+  if (wo.seekT > 0) {
+    wo.t0 = Date.now() - wo.seekT * 1000;
+    wo.trace = wo.trace.filter(p => p.t <= wo.seekT);
+    log(`Старт с ${fmtTime(Math.floor(wo.seekT))} — трек обрезан`);
+  } else {
+    wo.trace = [];
+    wo.t0 = Date.now();
+  }
   wo.paused = false;
   lockScreen(true);
   $('wkText').hidden = true;
@@ -705,6 +730,7 @@ $('btnWkStart').onclick = () => {
   $('btnWkPause').hidden = false;
   $('btnWkPause').textContent = 'Пауза';
   $('btnWkStop').hidden = false;
+  wkCursor();
   localStorage.setItem('aresWorkout', $('wkText').value);
   const totalMin = segs.reduce((a, s) => a + s.min, 0);
   log(`Тренировка стартовала: ${segs.length} сегментов, ${totalMin} мин`);
@@ -713,6 +739,7 @@ $('btnWkStart').onclick = () => {
 
 $('btnWkStop').onclick = () => {
   if (!wo.running) return;
+  wo.seekT = Math.max(0, (wo.paused ? (wo.pauseT0 - wo.t0) : (Date.now() - wo.t0)) / 1000);
   wo.running = false;
   wo.paused = false;
   lockScreen(false);
@@ -726,6 +753,7 @@ $('btnWkStop').onclick = () => {
   $('btnWkStop').hidden = true;
   $('wkState').textContent = 'остановлена';
   log('Тренировка остановлена');
+  wkCursor();
   drawWorkout();
 };
 
@@ -745,7 +773,28 @@ $('btnWkPause').onclick = () => {
     lockScreen(true);
     log('Продолжаем');
   }
+  wkCursor();
+  drawWorkout();
 };
+
+$('wkChart').addEventListener('pointerdown', e => {
+  if (wo.running && !wo.paused) return;
+  const segs = wo.segments.length ? wo.segments : parseWorkout($('wkText').value);
+  if (!segs.length) return;
+  const total = segs.reduce((a, s) => a + s.min * 60, 0);
+  const L = 36, R = 8, W = woW - L - R;
+  const t = Math.round(Math.min(total, Math.max(0, (e.offsetX - L) / W * total)));
+  if (wo.paused) {
+    wo.t0 = Date.now() - t * 1000;
+    wo.pauseT0 = Date.now();
+    wo.idx = -1;
+    wo.trace = wo.trace.filter(p => p.t <= t);
+    log(`Перемотка на ${fmtTime(Math.floor(t))}`);
+  } else {
+    wo.seekT = t;
+  }
+  drawWorkout();
+});
 
 $('wkPreset').innerHTML = '<option value="">— своя —</option>' + Object.entries(PRESETS).map(([k, p]) => `<option value="${k}">${p.name}</option>`).join('');
 const savedWkText = localStorage.getItem('aresWorkout');
@@ -759,6 +808,7 @@ function applyPreset(key) {
   $('wkText').value = buildWorkoutText(key);
   wo.segments = [];
   wo.trace = [];
+  wo.seekT = 0;
   drawWorkout();
 }
 $('wkPreset').onchange = () => {
@@ -777,6 +827,7 @@ let wkPreviewT = 0;
 $('wkText').addEventListener('input', () => {
   wo.segments = [];
   wo.trace = [];
+  wo.seekT = 0;
   $('wkPreset').value = '';
   localStorage.setItem('aresPreset', '');
   updateWkHint();
@@ -788,6 +839,7 @@ $('btnConnect').onclick = connect;
 
 window.addEventListener('resize', setupViz);
 setupViz();
+wkCursor();
 </script>
 </body>
 </html>
